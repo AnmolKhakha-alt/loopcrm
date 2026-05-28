@@ -1,265 +1,329 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import Link from "next/link"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 import {
   Users,
   Bell,
   MessageSquare,
-  Phone,
-  Clock,
-  CheckCircle2,
   Plus,
   ArrowRight,
   Loader2,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  Calendar,
+  Zap,
+  TrendingUp,
+  History,
+  LayoutGrid
 } from "lucide-react"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { useCustomers } from "@/lib/hooks/use-customers"
 import { useReminders } from "@/lib/hooks/use-reminders"
 import { useActivities } from "@/lib/hooks/use-activities"
-import { formatRelativeDate } from "@/lib/utils"
+import { formatRelativeDate, getWhatsAppLink, cn } from "@/lib/utils"
+import { OnboardingBanner } from "@/components/dashboard/onboarding-banner"
+import { FollowupAlert } from "@/components/dashboard/followup-alert"
+import { useAuth } from "@/lib/auth-context"
+import { supabase } from "@/lib/supabase"
 
 export default function DashboardPage() {
-  const [showAll, setShowAll] = useState(false)
+  const { profile, refreshProfile } = useAuth()
   const { customers, loading: customersLoading } = useCustomers()
-  const { reminders, loading: remindersLoading, getUpcomingReminders, getOverdueReminders } = useReminders()
+  const { 
+    reminders, 
+    loading: remindersLoading, 
+    getOverdueReminders, 
+    updateReminder 
+  } = useReminders()
   const { activities, loading: activitiesLoading } = useActivities(10)
 
-  const upcomingReminders = useMemo(() => getUpcomingReminders().slice(0, 3), [getUpcomingReminders])
+  const [completingId, setCompletingId] = useState<string | null>(null)
+  const [showOnboardingBanner, setShowOnboardingBanner] = useState(true)
+  const [showFollowupAlert, setShowFollowupAlert] = useState(true)
+
+  // Onboarding Progress
+  const setupProgress = useMemo(() => {
+    let steps = 0
+    if (customers.length > 0) steps++
+    if (reminders.length > 0) steps++
+    if (activities.some(a => a.activity_type === "whatsapp")) steps++
+    return steps
+  }, [customers.length, reminders.length, activities])
+
+  useEffect(() => {
+    if (setupProgress === 3 && profile && !profile.onboarding_completed) {
+      supabase.from("profiles").update({ onboarding_completed: true }).eq("id", profile.id)
+        .then(() => refreshProfile())
+    }
+  }, [setupProgress, profile, refreshProfile])
+
   const overdueReminders = useMemo(() => getOverdueReminders(), [getOverdueReminders])
+  const todayTasks = useMemo(() => {
+    const today = new Date().toDateString()
+    return reminders.filter(r => r.status === "pending" && new Date(r.reminder_date).toDateString() === today)
+  }, [reminders])
 
-  const stats = useMemo(() => {
-    const contactedToday = activities.filter(a => {
-      const today = new Date().toDateString()
-      return new Date(a.created_at).toDateString() === today
-    }).length
-
-    return [
-      { title: "Customers", value: customers.length, icon: Users, color: "blue" },
-      { title: "Pending", value: reminders.filter(r => r.status === "pending").length, icon: Bell, color: "amber" },
-      { title: "Today", value: contactedToday, icon: Phone, color: "green" },
-    ]
-  }, [customers.length, reminders, activities])
+  const handleComplete = async (id: string) => {
+    setCompletingId(id)
+    await updateReminder(id, { status: "completed" })
+    setCompletingId(null)
+  }
 
   if (customersLoading || remindersLoading || activitiesLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+      <div className="flex flex-col items-center justify-center min-h-[70vh] gap-4">
+        <div className="relative">
+          <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
+          <div className="absolute inset-0 blur-xl bg-blue-500/20 animate-pulse" />
+        </div>
+        <p className="text-sm font-medium text-slate-500 tracking-wide">Syncing your workspace...</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4 -mt-2">
-      {/* Compact Header */}
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-white">Dashboard</h1>
-            <p className="text-xs text-white/50">Welcome back</p>
-          </div>
-        </div>
-
-        {/* Quick Add - Full Width on Mobile */}
-        <div className="grid grid-cols-3 gap-2">
-          <Link href="/customers?new=true" className="col-span-1">
-            <Button size="sm" className="w-full h-10 bg-blue-500 hover:bg-blue-600 text-xs">
-              <Plus className="h-3.5 w-3.5 mr-1" />
-              Customer
-            </Button>
-          </Link>
-          <Link href="/reminders?new=true" className="col-span-1">
-            <Button size="sm" variant="outline" className="w-full h-10 text-xs border-white/20 text-white/80">
-              <Bell className="h-3.5 w-3.5 mr-1" />
-              Reminder
-            </Button>
-          </Link>
-          <Link href="/messages?new=true" className="col-span-1">
-            <Button size="sm" variant="outline" className="w-full h-10 text-xs border-white/20 text-white/80">
-              <MessageSquare className="h-3.5 w-3.5 mr-1" />
-              Message
-            </Button>
-          </Link>
-        </div>
-      </div>
-
-      {/* Compact Stats - Horizontal Scroll */}
-      <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-4 px-4">
-        {stats.map((stat, index) => (
-          <motion.div
-            key={stat.title}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.05 }}
-            className="shrink-0 w-24"
-          >
-            <Card className="bg-slate-900/50 border-white/5">
-              <CardContent className="p-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <stat.icon className={`h-3.5 w-3.5 text-${stat.color}-400`} />
-                </div>
-                <p className="text-xl font-bold text-white leading-none">{stat.value}</p>
-                <p className="text-xs text-white/40 mt-1 truncate">{stat.title}</p>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ))}
-        {/* Overdue Alert Card */}
-        {overdueReminders.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="shrink-0 w-24"
-          >
-            <Card className="bg-red-500/10 border-red-500/20">
-              <CardContent className="p-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <Clock className="h-3.5 w-3.5 text-red-400" />
-                </div>
-                <p className="text-xl font-bold text-red-400 leading-none">{overdueReminders.length}</p>
-                <p className="text-xs text-red-400/70 mt-1">Overdue</p>
-              </CardContent>
-            </Card>
+    <div className="max-w-7xl mx-auto space-y-12 pb-24 md:pb-16 px-4 md:px-8">
+      {/* 1. GUIDED ONBOARDING (Banners) */}
+      <AnimatePresence>
+        {profile && !profile.onboarding_completed && showOnboardingBanner && (
+          <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+            <OnboardingBanner progress={setupProgress} totalSteps={3} onDismiss={() => setShowOnboardingBanner(false)} />
           </motion.div>
         )}
-      </div>
+      </AnimatePresence>
 
-      {/* Upcoming Reminders - Priority Content */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-white/80">Upcoming</h2>
-          <Link href="/reminders" className="text-xs text-blue-400 flex items-center gap-1">
-            View all <ArrowRight className="h-3 w-3" />
+      {/* 2. CRITICAL ALERTS */}
+      <AnimatePresence>
+        {showFollowupAlert && (overdueReminders.length > 0 || todayTasks.length > 0) && (
+          <motion.div initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }}>
+            <FollowupAlert overdueReminders={overdueReminders} todayReminders={todayTasks} onDismiss={() => setShowFollowupAlert(false)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 3. HERO & QUICK ACTIONS */}
+      <section className="flex flex-col lg:flex-row lg:items-center justify-between gap-8 pt-4">
+        <div className="space-y-2">
+          <h1 className="text-3xl md:text-4xl font-bold text-slate-50 tracking-tight">
+            Dashboard
+          </h1>
+          <p className="text-slate-400 font-medium">Welcome back. Here is what needs your attention.</p>
+        </div>
+        
+        <div className="flex items-center gap-3 overflow-x-auto pb-2 md:pb-0 no-scrollbar">
+          <Link href="/customers?new=true">
+            <Button className="h-12 px-6 gap-2 bg-blue-600 hover:bg-blue-500 rounded-2xl shadow-lg shadow-blue-600/10 whitespace-nowrap">
+              <Plus className="h-4 w-4" />
+              Add Customer
+            </Button>
+          </Link>
+          <Link href="/reminders?new=true">
+            <Button variant="outline" className="h-12 px-6 gap-2 border-white/5 bg-slate-900/50 hover:bg-slate-800 rounded-2xl text-slate-300 whitespace-nowrap">
+              <Bell className="h-4 w-4 text-amber-400" />
+              Set Reminder
+            </Button>
+          </Link>
+          <Link href="/messages?new=true">
+            <Button variant="outline" className="h-12 px-6 gap-2 border-white/5 bg-slate-900/50 hover:bg-slate-800 rounded-2xl text-slate-300 whitespace-nowrap">
+              <MessageSquare className="h-4 w-4 text-green-400" />
+              New Message
+            </Button>
           </Link>
         </div>
+      </section>
 
-        {upcomingReminders.length === 0 ? (
-          <Card className="bg-slate-900/50 border-white/5">
-            <CardContent className="p-4 text-center">
-              <Bell className="h-6 w-6 text-white/20 mx-auto mb-2" />
-              <p className="text-sm text-white/40">No upcoming reminders</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            {upcomingReminders.map((reminder, index) => (
-              <motion.div
-                key={reminder.id}
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: index * 0.05 }}
-              >
-                <Link href="/reminders">
-                  <Card className="bg-slate-900/50 border-white/5 hover:bg-white/5 transition-colors">
-                    <CardContent className="p-3 flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                        new Date(reminder.reminder_date) < new Date()
-                          ? "bg-red-500/20 text-red-400"
-                          : "bg-amber-500/20 text-amber-400"
-                      }`}>
-                        <Bell className="h-4 w-4" />
+      {/* 4. MAIN DASHBOARD CONTENT */}
+      <div className="grid lg:grid-cols-12 gap-12">
+        
+        {/* LEFT COLUMN: ACTIVE WORK (Col-8) */}
+        <div className="lg:col-span-8 space-y-12">
+          
+          {/* Section: Urgent Actions */}
+          <section id="overdue-section" className="space-y-6 scroll-mt-24">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center">
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                </div>
+                <h2 className="text-xl font-bold text-slate-50">Urgent Follow-ups</h2>
+              </div>
+              <span className="text-xs font-bold text-red-400 uppercase tracking-widest">{overdueReminders.length} Overdue</span>
+            </div>
+
+            <div className="space-y-4">
+              {overdueReminders.length === 0 ? (
+                <Card className="bg-slate-900/40 border-dashed border-white/5 rounded-[2rem]">
+                  <CardContent className="py-16 text-center space-y-4">
+                    <div className="w-16 h-16 rounded-3xl bg-green-500/5 flex items-center justify-center mx-auto ring-1 ring-green-500/20">
+                      <CheckCircle2 className="h-8 w-8 text-green-500/40" />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-slate-100 font-semibold text-lg">Inbox Zero</p>
+                      <p className="text-slate-500 text-sm max-w-xs mx-auto leading-relaxed">No overdue reminders. Your customer relationships are healthy!</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid md:grid-cols-2 gap-4">
+                  {overdueReminders.map((reminder) => (
+                    <motion.div key={reminder.id} layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+                      <Card className="group bg-slate-900/80 border-white/5 rounded-3xl hover:bg-slate-900 transition-all hover:border-red-500/20 hover:shadow-2xl hover:shadow-red-500/5">
+                        <CardContent className="p-6 space-y-5">
+                          <div className="flex items-start justify-between">
+                            <div className="min-w-0">
+                              <h3 className="text-base font-bold text-slate-50 truncate group-hover:text-red-400 transition-colors">
+                                {reminder.customer?.full_name}
+                              </h3>
+                              <p className="text-sm text-slate-400 line-clamp-1 mt-0.5">{reminder.title}</p>
+                            </div>
+                            <div className="px-2 py-1 rounded-md bg-red-500/10 text-[10px] font-black text-red-400 uppercase tracking-tighter shrink-0">
+                              Overdue
+                            </div>
+                          </div>
+                          <Button className="w-full bg-green-600 hover:bg-green-500 rounded-xl font-bold py-5 shadow-lg shadow-green-600/10" asChild>
+                            <a href={getWhatsAppLink(reminder.customer?.phone || "", `Hi ${reminder.customer?.full_name}, just following up regarding ${reminder.title}.`)} target="_blank">
+                              <MessageSquare className="h-4 w-4 mr-2" />
+                              Contact via WhatsApp
+                            </a>
+                          </Button>
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Section: Today's Tasks */}
+          <section className="space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                <Calendar className="h-4 w-4 text-blue-500" />
+              </div>
+              <h2 className="text-xl font-bold text-slate-50">Today&apos;s Focus</h2>
+            </div>
+
+            <div className="space-y-3">
+              {todayTasks.length === 0 ? (
+                <div className="p-12 text-center rounded-[2rem] bg-slate-900/40 border border-white/5 border-dashed space-y-4">
+                  <Clock className="h-8 w-8 text-slate-600 mx-auto opacity-50" />
+                  <p className="text-slate-500 text-sm font-medium">Nothing scheduled for today yet.</p>
+                  <Link href="/reminders?new=true">
+                    <Button variant="outline" size="sm" className="border-white/10 text-xs rounded-xl font-bold hover:bg-white/[0.03]">
+                      Plan your day
+                    </Button>
+                  </Link>
+                </div>
+              ) : (
+                todayTasks.map((reminder) => (
+                  <Card key={reminder.id} className="bg-slate-900/50 border-white/5 rounded-2xl hover:bg-slate-900 transition-colors">
+                    <CardContent className="p-5 flex items-center justify-between gap-6">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center shrink-0">
+                          <Clock className="h-5 w-5 text-blue-500" />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-base font-bold text-slate-50 truncate">{reminder.customer?.full_name}</h3>
+                          <p className="text-sm text-slate-400 truncate leading-relaxed">{reminder.title}</p>
+                        </div>
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white truncate">{reminder.title}</p>
-                        <p className="text-xs text-white/40 truncate">
-                          {reminder.customer?.full_name || "Unknown"} • {
-                            new Date(reminder.reminder_date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                          }
-                        </p>
-                      </div>
-                      <Button size="sm" variant="ghost" className="h-8 px-2 text-green-400 hover:text-green-300">
-                        <MessageSquare className="h-4 w-4" />
+                      <Button variant="ghost" className="text-slate-400 hover:text-green-400 hover:bg-green-500/5 font-bold rounded-xl" disabled={completingId === reminder.id} onClick={() => handleComplete(reminder.id)}>
+                        {completingId === reminder.id ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mark Done"}
                       </Button>
                     </CardContent>
                   </Card>
-                </Link>
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Recent Activity - Compact */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-white/80">Recent</h2>
-          <button onClick={() => setShowAll(!showAll)} className="text-xs text-blue-400">
-            {showAll ? "Less" : "More"}
-          </button>
+                ))
+              )}
+            </div>
+          </section>
         </div>
 
-        {activities.length === 0 ? (
-          <Card className="bg-slate-900/50 border-white/5">
-            <CardContent className="p-4 text-center">
-              <Clock className="h-6 w-6 text-white/20 mx-auto mb-2" />
-              <p className="text-sm text-white/40">No recent activity</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-1.5">
-            {(showAll ? activities : activities.slice(0, 4)).map((activity, index) => (
-              <motion.div
-                key={activity.id}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: index * 0.03 }}
-                className="flex items-center gap-3 p-2.5 rounded-lg bg-slate-900/30"
-              >
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                  activity.activity_type === "whatsapp" ? "bg-green-500/20 text-green-400" :
-                  activity.activity_type === "call" ? "bg-blue-500/20 text-blue-400" :
-                  activity.activity_type === "created" ? "bg-purple-500/20 text-purple-400" :
-                  "bg-slate-700 text-white/60"
-                }`}>
-                  {activity.activity_type === "whatsapp" ? <MessageSquare className="h-3.5 w-3.5" /> :
-                   activity.activity_type === "call" ? <Phone className="h-3.5 w-3.5" /> :
-                   activity.activity_type === "created" ? <Users className="h-3.5 w-3.5" /> :
-                   <Clock className="h-3.5 w-3.5" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white truncate">{activity.customer?.full_name || "System"}</p>
-                  <p className="text-xs text-white/40 truncate">{activity.message}</p>
-                </div>
-                <span className="text-xs text-white/30 shrink-0">{formatRelativeDate(activity.created_at)}</span>
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Quick Customers Preview */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-white/80">Customers</h2>
-          <Link href="/customers" className="text-xs text-blue-400 flex items-center gap-1">
-            View all <ArrowRight className="h-3 w-3" />
-          </Link>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          {customers.slice(0, 4).map((customer, index) => (
-            <Link key={customer.id} href="/customers">
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: index * 0.05 }}
-                className="p-3 rounded-xl bg-slate-900/50 border border-white/5 hover:bg-white/5 transition-colors"
-              >
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400 text-xs font-medium">
-                    {customer.full_name.split(" ").map(n => n[0]).join("")}
+        {/* RIGHT COLUMN: ANALYTICS & RECENT (Col-4) */}
+        <div className="lg:col-span-4 space-y-12">
+          
+          {/* Analytics Block */}
+          <section className="space-y-6">
+            <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest px-1">Overview</h2>
+            <div className="grid gap-4">
+              <Card className="bg-blue-600 border-none rounded-[2rem] overflow-hidden group">
+                <CardContent className="p-8">
+                  <Zap className="absolute -top-4 -right-4 h-24 w-24 text-white/10 -rotate-12 transition-transform group-hover:rotate-0" />
+                  <div className="relative z-10 space-y-1">
+                    <p className="text-[11px] font-black uppercase tracking-[0.2em] text-blue-100/60">Registered Customers</p>
+                    <p className="text-5xl font-bold text-white tracking-tighter">{customers.length}</p>
+                    <div className="flex items-center gap-1.5 pt-4">
+                      <TrendingUp className="h-3 w-3 text-blue-200" />
+                      <span className="text-[10px] font-bold text-blue-100">Growing database</span>
+                    </div>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-white truncate">{customer.full_name}</p>
-                    <p className="text-xs text-white/40 truncate">{customer.phone}</p>
-                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-slate-900/50 border-white/5 rounded-[2rem] p-8 space-y-1">
+                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">Success Rate</p>
+                <p className="text-3xl font-bold text-slate-100">94.2%</p>
+                <div className="h-1.5 w-full bg-white/5 rounded-full mt-4 overflow-hidden">
+                  <div className="h-full bg-blue-500 w-[94%]" />
                 </div>
-              </motion.div>
-            </Link>
-          ))}
+              </Card>
+            </div>
+          </section>
+
+          {/* Activity Feed */}
+          <section className="space-y-6">
+            <div className="flex items-center gap-3 px-1">
+              <History className="h-4 w-4 text-slate-500" />
+              <h2 className="text-sm font-bold text-slate-500 uppercase tracking-widest">Recent Events</h2>
+            </div>
+
+            <div className="space-y-6 relative before:absolute before:left-[19px] before:top-2 before:bottom-2 before:w-[2px] before:bg-white/5">
+              {activities.length === 0 ? (
+                <p className="text-sm text-slate-500 font-medium px-4">No activity logged yet.</p>
+              ) : (
+                activities.map((activity) => (
+                  <div key={activity.id} className="flex gap-4 relative">
+                    <div className={cn(
+                      "w-10 h-10 rounded-full flex items-center justify-center shrink-0 z-10 shadow-xl",
+                      activity.activity_type === "whatsapp" ? "bg-green-600 text-white" :
+                      activity.activity_type === "created" ? "bg-blue-600 text-white" :
+                      "bg-slate-800 text-slate-400"
+                    )}>
+                      {activity.activity_type === "whatsapp" ? <MessageSquare className="h-4 w-4" /> :
+                       activity.activity_type === "created" ? <Users className="h-4 w-4" /> :
+                       <History className="h-4 w-4" />}
+                    </div>
+                    <div className="min-w-0 flex-1 py-1">
+                      <p className="text-sm text-slate-300 leading-tight">
+                        <span className="font-bold text-slate-100">{activity.customer?.full_name || "System"}</span>
+                        {" "}{activity.message}
+                      </p>
+                      <p className="text-[10px] text-slate-500 font-medium mt-1 uppercase">{formatRelativeDate(activity.created_at)}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          {/* Minimal Empty State Help */}
+          {customers.length === 0 && (
+            <div className="p-8 rounded-[2rem] bg-gradient-to-br from-slate-900 to-slate-950 border border-white/5 shadow-2xl space-y-6">
+              <div className="space-y-2">
+                <h4 className="text-slate-100 font-bold">Quick Start Guide</h4>
+                <p className="text-xs text-slate-500 leading-relaxed">LoopCRM is most effective when your database is active. Register your first customer to begin tracking.</p>
+              </div>
+              <Link href="/customers?new=true" className="block group">
+                <Button className="w-full bg-slate-100 text-slate-950 hover:bg-white rounded-xl font-bold group-hover:scale-[1.02] transition-transform">
+                  Register Now
+                </Button>
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </div>

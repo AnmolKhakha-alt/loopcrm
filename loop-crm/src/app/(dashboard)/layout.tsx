@@ -9,18 +9,21 @@ import { useAuth } from "@/lib/auth-context"
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const { user, loading: authLoading } = useAuth()
+  const { user, profile, loading: authLoading } = useAuth()
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.push("/auth/login")
-      return
+    if (!authLoading) {
+      if (!user) {
+        router.push("/auth/login")
+        return
+      }
+      
+      if (user && profile) {
+        setLoading(false)
+      }
     }
-    if (user) {
-      setLoading(false)
-    }
-  }, [user, authLoading, router])
+  }, [user, profile, authLoading, router])
 
   if (authLoading || loading || !user) {
     return (
