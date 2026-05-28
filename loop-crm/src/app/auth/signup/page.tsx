@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { motion } from "framer-motion"
@@ -13,7 +13,7 @@ import { useToast } from "@/lib/hooks/use-toast"
 
 export default function SignupPage() {
   const router = useRouter()
-  const { signUp } = useAuth()
+  const { signUp, user, loading: authLoading } = useAuth()
   const { addToast } = useToast()
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
@@ -22,6 +22,12 @@ export default function SignupPage() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.push("/dashboard")
+    }
+  }, [user, authLoading, router])
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -45,7 +51,7 @@ export default function SignupPage() {
       return
     }
 
-    const { error } = await signUp(email, password, name || undefined)
+    const { error } = await signUp(email, password, name, phone)
 
     if (error) {
       addToast({
@@ -60,8 +66,14 @@ export default function SignupPage() {
         description: "Please check your email to verify your account",
         variant: "success",
       })
-      router.push("/dashboard")
+      // We don't push to dashboard here because if email confirmation is on, 
+      // the user isn't logged in yet. The useEffect will handle it if they are.
+      setLoading(false)
     }
+  }
+
+  if (authLoading) {
+    return null // Or a loading spinner
   }
 
   return (
