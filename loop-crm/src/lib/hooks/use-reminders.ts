@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { supabase } from "../supabase"
 import { useAuth } from "../auth-context"
+import { trackEvent } from "../events"
 
 export interface Reminder {
   id: string
@@ -60,6 +61,12 @@ export function useReminders() {
       setReminders((prev) => [...prev, data].sort((a, b) =>
         new Date(a.reminder_date).getTime() - new Date(b.reminder_date).getTime()
       ))
+      // Log event
+      trackEvent('create_reminder', {
+        reminder_id: data.id,
+        customer_id: data.customer_id,
+        title: data.title
+      })
     }
     return { error: null }
   }

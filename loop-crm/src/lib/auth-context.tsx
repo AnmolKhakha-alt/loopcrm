@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react"
 import { User, Session } from "@supabase/supabase-js"
 import { supabase } from "./supabase"
+import { trackEvent } from "./events"
 
 interface Profile {
   id: string
@@ -69,6 +70,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (!error) {
+      trackEvent('user_login', { email })
+    }
     return { error }
   }
 
@@ -84,6 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
       },
     })
+    if (!error) {
+      trackEvent('user_signup', { email, fullName })
+    }
     return { error }
   }
 

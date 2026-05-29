@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input"
 import { MESSAGE_TEMPLATES, generateWhatsAppLink, fillTemplate, generateAIMessage } from "@/lib/whatsapp"
 import { useToast } from "@/lib/hooks/use-toast"
+import { trackEvent } from "@/lib/events"
 
 interface WhatsAppButtonProps {
   phone: string
@@ -61,6 +62,15 @@ export function WhatsAppButton({ phone, customerName, product, size = "sm", show
   const handleSend = () => {
     const link = generateWhatsAppLink(phone, message)
     window.open(link, "_blank")
+    
+    // Log event
+    trackEvent('send_whatsapp_message', {
+      customer_name: customerName,
+      has_product: !!product,
+      message_length: message.length,
+      used_template: !!selectedTemplate
+    })
+
     setShowComposer(false)
     setMessage("")
     setSelectedTemplate(null)

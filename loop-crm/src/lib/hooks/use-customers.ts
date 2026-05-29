@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { supabase } from "../supabase"
 import { useAuth } from "../auth-context"
+import { trackEvent } from "../events"
 
 export interface Customer {
   id: string
@@ -57,6 +58,11 @@ export function useCustomers() {
     if (error) return { error }
     if (data) {
       setCustomers((prev) => [data, ...prev])
+      // Log event
+      trackEvent('add_customer', { 
+        customer_id: data.id, 
+        full_name: data.full_name 
+      })
       // Log activity
       await supabase.from("activities").insert({
         user_id: user.id,

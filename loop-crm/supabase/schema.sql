@@ -144,3 +144,27 @@ create index idx_reminders_user_id on public.reminders(user_id);
 create index idx_reminders_date on public.reminders(reminder_date);
 create index idx_activities_user_id on public.activities(user_id);
 create index idx_activities_created on public.activities(created_at desc);
+
+-- EVENTS TABLE (for general analytics)
+create table public.events (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references auth.users on delete cascade,
+  event_name text not null,
+  metadata jsonb default '{}'::jsonb,
+  created_at timestamptz default now()
+);
+
+-- Enable RLS for events
+alter table public.events enable row level security;
+
+-- Events policies
+create policy "Users can view own events" on public.events
+  for select using (auth.uid() = user_id);
+
+create policy "Users can insert own events" on public.events
+  for insert with check (auth.uid() = user_id or user_id is null);
+
+-- INDEXES for events
+create index idx_events_name on public.events(event_name);
+create index idx_events_user_id on public.events(user_id);
+create index idx_events_created_at on public.events(created_at desc);
